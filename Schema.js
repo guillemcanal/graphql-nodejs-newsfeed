@@ -38,10 +38,26 @@ const User = new GraphQLObjectType({
     },
     stories: {
       type: new GraphQLList(Story),
-      resolve(parent, args, {rootValue: {db}}) {
-        return db.all(`
-          SELECT * FROM Story WHERE author = $user
-        `, {$user: parent.id});
+      resolve(user, args, {rootValue: {db, ctx}}) {
+
+        // Check if we are in a users query contexts
+        if (undefined !== ctx.usersQuery) {
+
+          // Create a stories query using users ids
+          if (undefined === ctx.usersStoriesQuery) {
+            // Create a comma separed list of users id
+            let userIds = ctx.usersQuery.map(user => user.id).join(', ');
+            ctx.usersStoriesQuery = db.all('SELECT * FROM Story WHERE author IN('+userIds+')');
+          }
+
+          // Filter out stories not belonging to the current user
+          return ctx.usersStoriesQuery.then(stories => {
+            return stories.filter(story => story.author === user.id );
+          });
+        }
+
+        // If not in a users query context, get stories for the current user
+        return db.all('SELECT * FROM Story WHERE author = $user', {$user: user.id});
       }
     }
   })
@@ -50,6 +66,7 @@ const User = new GraphQLObjectType({
 const Query = new GraphQLObjectType({
   name: 'Query',
   fields: () => ({
+
     viewer: {
       type: User,
       resolve(parent, args, {rootValue: {db, userId}}) {
@@ -58,6 +75,20 @@ const Query = new GraphQLObjectType({
         `, {$id: userId});
       }
     },
+
+    users: {
+      type: new GraphQLList(User),
+      resolve(parent, args, {rootValue: {db, ctx}}) {
+
+        let users = db.all(`SELECT * FROM User`)
+
+        // Set users query context
+        users.then(users => ctx.usersQuery = users);
+
+        return users;
+      }
+    },
+
     user: {
       type: User,
       args: {
@@ -71,6 +102,7 @@ const Query = new GraphQLObjectType({
           `, {$id: id});
       }
     },
+
     story: {
       type: Story,
       args: {

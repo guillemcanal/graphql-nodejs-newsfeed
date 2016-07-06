@@ -4,9 +4,13 @@ import {promisify} from 'bluebird';
 
 async function openConnection(request, reply) {
   try {
+
     request.db = new sqlite3.Database(DB_PATH);
     request.db.get = promisify(request.db.get);
     request.db.all = promisify(request.db.all);
+    request.db.on('trace', function (trace) {
+      console.log('trace', trace);
+    })
 
     reply.continue();
   } catch (error) {
